@@ -1,0 +1,89 @@
+CREATE PROC dawids_sum (@number_of_digits INT, @total_sum INT)
+AS
+
+begin
+-- at first, procedure checks if operation is possible. If sum of the lowest combination of unique numbers 1+2+3+... is bigger than sum, then return
+
+if (1+@number_of_digits) * @number_of_digits / 2 > @total_sum 
+	BEGIN
+		select 'Operation is not possible, type bigger sum or lower amount of numbers' as error_result;
+    	RETURN;
+    END;
+ELSE IF @number_of_digits = 1
+	BEGIN
+    	SELECT cast(@total_sum as nvarchar) as result
+        RETURN;
+    END;
+ELSE IF @number_of_digits < 1
+	BEGIN
+    	SELECT 'wrong parameter 1, it needs to be >0' as result
+        RETURN;
+    END;    	
+ 
+-- if conditions are ok, then it creates tmp table and fills it with data
+
+-- creates tmp table with all the numbers to then perform cross join operation of all the rows 
+
+drop TABLE if exists tmp_number;
+create TABLE tmp_number (
+  nums INT
+  );
+
+-- fill the table with data
+DECLARE @i INT = 1
+
+WHILE @i < @total_sum
+BEGIN
+  insert into tmp_number
+  select @i;
+  SET @i = @i +1
+END;
+
+-- perform dynamic sql to cross join based on variables
+
+DECLARE @j INT = 1;
+DECLARE @sql NVARCHAR(MAX) = N' as result FROM tmp_number as t1';
+DECLARE @table_alias NVARCHAR(MAX) = '';
+DECLARE @where_condition_1 NVARCHAR(MAX) = 't1.nums+';
+DECLARE @where_condition_2 NVARCHAR(MAX) = '';
+
+DECLARE @select_plus NVARCHAR(MAX) = '''+''+'
+DECLARE @select_result NVARCHAR(MAX) = 'SELECT cast(t1.nums as nvarchar) + '+@select_plus;
+
+WHILE @j < @number_of_digits
+BEGIN
+	SET @table_alias = 't' + CAST(@j+1 AS NVARCHAR);
+	SET @sql = @sql + N' CROSS JOIN tmp_number AS ' + @table_alias;
+    SET @select_result = @select_result + 'CAST(' + @table_alias + '.nums as nvarchar) +' + @select_plus;
+    SET @where_condition_1 = @where_condition_1 + @table_alias + '.nums+';
+    SET @where_condition_2 = @where_condition_2 + 't' + CAST(@j AS NVARCHAR) + '.nums>' + @table_alias + '.nums AND ';
+	SET @j = @j + 1;
+END
+
+-- correct the where conditions
+
+SET @where_condition_1 = left(@where_condition_1,len(@where_condition_1)-1);
+SET @where_condition_2 = left(@where_condition_2,len(@where_condition_2)-4);
+
+SET @select_result = left(@select_result,len(@select_result)-5);
+
+-- merge text into sql code
+
+SET @sql = 
+  		@select_result+
+  		@sql+ 
+    	' WHERE '+
+    	@where_condition_1+
+    	'='+
+    	cast(@total_sum as nvarchar)+
+  		' AND '+
+  		@where_condition_2
+    
+
+-- perform the sql
+
+
+EXEC sp_executesql @sql; -- execute the sql string (dynamic sql)
+DROP TABLE tmp_number;
+
+END;
